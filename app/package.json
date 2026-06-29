@@ -8,7 +8,9 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js",
-    "test": "node --test"
+    "pipeline": "node pipeline/run.js",
+    "test": "node --test test/",
+    "test:pipeline": "node --test pipeline/test/"
   },
   "engines": {
     "node": ">=18"
