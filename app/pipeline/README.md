@@ -61,6 +61,25 @@ restricted-region on the way in), at **erasure** (`erase` deletes everywhere +
 suppresses so it can't return), and at **export** (resale_ok + verified +
 not-suppressed only).
 
+## Serving the data (the "offer to others" surface)
+
+`npm start` exposes key-protected endpoints over this DB (in `server/provider-api.js`),
+returning **only resale-safe** records (resale_ok + verified + not suppressed).
+The DB auto-seeds from the sample on first boot.
+
+```bash
+KEY=$(curl -s localhost:3000/api/app/account | grep -o 'fe_live_[a-z0-9_]*')
+curl -H "x-api-key: $KEY" "localhost:3000/api/v1/people/search?q=Sales&limit=3"
+curl -H "x-api-key: $KEY" "localhost:3000/api/v1/people/<id>"      # + provenance
+curl -H "x-api-key: $KEY" "localhost:3000/api/v1/export.csv?limit=1000"
+curl -H "x-api-key: $KEY" "localhost:3000/api/v1/stats"
+curl -H "x-api-key: $KEY" -X POST localhost:3000/api/v1/suppress -d '{"value":"a@b.com"}'
+```
+
+This closes the loop: **ingest → canonical DB → serving API → customers**, with
+compliance enforced at query time (a suppressed value disappears from search and
+export immediately).
+
 ## Moving to Postgres
 
 Swap `lib/db.js` for a `pg` Pool exposing the same `run/get/all` helpers and run

@@ -164,6 +164,18 @@
           <pre class="out" id="api-curl"></pre>
           <button class="btn btn-primary btn-sm" id="api-try">Try it live</button>
           <div id="api-out" style="margin-top:1rem;"></div>
+
+          <h3 style="margin-top:1.4rem;">Data API — query the database you built</h3>
+          <p class="hint">Backed by the pipeline's canonical DB. Returns only resale-safe (verified, resale-permitted, non-suppressed) records.</p>
+          <table>
+            <tr><td class="mono">GET</td><td class="mono">/api/v1/people/search?q=&title=&industry=&domain=&limit=</td><td>filterable directory</td></tr>
+            <tr><td class="mono">GET</td><td class="mono">/api/v1/people/:id</td><td>single record + provenance</td></tr>
+            <tr><td class="mono">GET</td><td class="mono">/api/v1/export.csv?limit=</td><td>bulk resale-safe export</td></tr>
+            <tr><td class="mono">GET</td><td class="mono">/api/v1/stats</td><td>dataset coverage</td></tr>
+            <tr><td class="mono">POST</td><td class="mono">/api/v1/suppress</td><td>honor opt-out / DSAR</td></tr>
+          </table>
+          <button class="btn btn-ghost btn-sm" id="api-search" style="margin-top:.6rem;">Try people search</button>
+          <div id="api-search-out" style="margin-top:1rem;"></div>
         </div>
       </section>
     </main>

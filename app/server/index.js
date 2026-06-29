@@ -18,6 +18,7 @@ import {
 import { newWorkflow, addColumn, runWorkflow, COLUMN_TYPES } from './lib/workflows.js';
 import { newSequence, enroll, advance, placeCall } from './lib/sequences.js';
 import { id } from './lib/util.js';
+import { providerRouter, bootstrapProviderDB } from './provider-api.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = resolve(__dirname, '../public');
@@ -240,6 +241,10 @@ app.post('/api/v1/enrich', requireApiKey, (req, res) => {
 });
 app.get('/api/v1/credits', requireApiKey, (req, res) => res.json({ remaining: creditsRemaining() }));
 
+// Serving layer over the canonical provider DB built by the pipeline
+// (/api/v1/people/search, /people/:id, /export.csv, /stats, /suppress).
+app.use('/api/v1', requireApiKey, providerRouter());
+
 // ----------------------------------------------------------------------------
 // Static site + health
 // ----------------------------------------------------------------------------
@@ -247,9 +252,13 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use(express.static(PUBLIC_DIR));
 app.get('/app', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'app.html')));
 
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`FullEnrich rebuild running → http://localhost:${PORT}  (marketing: /, app: /app)`);
-});
+bootstrapProviderDB()
+  .catch((e) => console.error('provider DB bootstrap failed:', e.message))
+  .finally(() => {
+    app.listen(PORT, () => {
+      // eslint-disable-next-line no-console
+      console.log(`FullEnrich rebuild running → http://localhost:${PORT}  (marketing: /, app: /app)`);
+    });
+  });
 
 export default app;

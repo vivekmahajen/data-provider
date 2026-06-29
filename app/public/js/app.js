@@ -249,6 +249,14 @@ async function setupApi() {
     } catch (err) { toast(err.message); }
     busy(e.target, false);
   });
+  $('#api-search').addEventListener('click', async (e) => {
+    busy(e.target, true);
+    try {
+      const r = await api('/api/v1/people/search?q=Sales&limit=3', { headers: { 'x-api-key': a.apiKey } });
+      $('#api-search-out').innerHTML = `<pre class="out">${esc(JSON.stringify(r, null, 2))}</pre>`;
+    } catch (err) { toast(err.message); }
+    busy(e.target, false);
+  });
 }
 
 // ---- Init ----
