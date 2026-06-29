@@ -140,3 +140,25 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE INDEX IF NOT EXISTS idx_usage_customer  ON usage_events(customer_id, ts);
 CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
+
+-- ---- Candidate registry (opt-in, consent-based) ---------------------------
+-- Job-seekers who CONSENT to be listed for university hiring. consent + the
+-- exact consent text + timestamp are stored so the lawful basis is auditable
+-- (DPDP). resale to the consented purpose only.
+CREATE TABLE IF NOT EXISTS candidate_profiles (
+  id                    TEXT PRIMARY KEY,
+  person_id             TEXT NOT NULL UNIQUE REFERENCES people(id),
+  desired_roles         TEXT,                 -- comma list: Dean, Director Admissions, ...
+  current_title         TEXT,
+  current_institution   TEXT,
+  years_experience      INTEGER,
+  highest_qualification TEXT,                 -- PhD, Masters, ...
+  cv_url                TEXT,
+  available             INTEGER NOT NULL DEFAULT 1,
+  consent               INTEGER NOT NULL DEFAULT 0,
+  consent_text          TEXT,
+  consent_at            INTEGER,
+  created_at            INTEGER NOT NULL,
+  updated_at            INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_person ON candidate_profiles(person_id);

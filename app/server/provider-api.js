@@ -81,8 +81,9 @@ export function providerRouter() {
   // GET /api/v1/people/search — filterable directory query.
   // Delivering real values costs PRICES.record per contact; ?preview=true masks.
   r.get('/people/search', h(async (req, res) => {
-    const { q, title, industry, location, domain, region, minConfidence } = req.query;
+    const { q, title, industry, location, domain, region, minConfidence, role, qualification, minExperience } = req.query;
     const resaleOnly = req.query.resaleOnly !== 'false';
+    const candidatesOnly = req.query.candidatesOnly === 'true';
     const limit = Math.min(Number(req.query.limit) || 25, 200);
     const offset = Number(req.query.offset) || 0;
 
@@ -94,15 +95,23 @@ export function providerRouter() {
     if (location) { where.push(`p.location LIKE :location`); params.location = `%${location}%`; }
     if (domain) { where.push(`c.domain = :domain`); params.domain = String(domain).toLowerCase(); }
     if (region) { where.push(`p.region = :region`); params.region = String(region).toUpperCase(); }
+    // candidate-registry filters (for universities hiring)
+    if (candidatesOnly) where.push(`cp2.consent = 1 AND cp2.available = 1`);
+    if (role) { where.push(`cp2.desired_roles LIKE :role`); params.role = `%${role}%`; }
+    if (qualification) { where.push(`cp2.highest_qualification = :qualification`); params.qualification = qualification; }
+    if (minExperience) { where.push(`cp2.years_experience >= :minExperience`); params.minExperience = Number(minExperience); }
     const clause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const FROM = `FROM people p
+         LEFT JOIN companies c ON c.id = p.company_id
+         LEFT JOIN candidate_profiles cp2 ON cp2.person_id = p.id`;
 
-    const total = (await get(
-      `SELECT COUNT(*) n FROM people p LEFT JOIN companies c ON c.id = p.company_id ${clause}`, params
-    )).n;
+    const total = (await get(`SELECT COUNT(*) n ${FROM} ${clause}`, params)).n;
     const rows = await all(
       `SELECT p.id, p.full_name, p.title, p.location, p.region,
-              c.name AS company, c.domain, c.industry, c.size
-         FROM people p LEFT JOIN companies c ON c.id = p.company_id
+              c.name AS company, c.domain, c.industry, c.size,
+              cp2.desired_roles, cp2.years_experience, cp2.highest_qualification,
+              cp2.current_institution, cp2.cv_url, cp2.available
+         ${FROM}
          ${clause}
          ORDER BY p.full_name LIMIT :limit OFFSET :offset`,
       { ...params, limit, offset }
