@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Join the Candidate Registry — University Roles in India</title>
+  <meta name="description" content="Opt in to be considered by Indian universities for leadership and administrative roles — Dean, Director of Admissions, Registrar and more." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="container">
+      <a class="brand" href="/"><span class="logo">F</span> Candidate Registry</a>
+      <nav class="nav-links"><a href="#how">How it works</a></nav>
+    </div>
+  </header>
+
+  <main class="container" style="max-width: 720px; padding: 2.5rem 0;">
+    <span class="badge">Opt-in · India · University hiring</span>
+    <h1 style="font-size: 2.2rem;">Get found by Indian universities hiring for leadership roles</h1>
+    <p class="lead muted">Add your profile once. Universities and their authorized recruiters searching for
+      Deans, Directors of Admissions, Registrars and other academic/administrative leaders can then reach you.
+      You stay in control — withdraw anytime.</p>
+
+    <form id="form" class="card" style="margin-top: 1.5rem;">
+      <div class="row">
+        <div class="field"><label>Full name *</label><input id="fullName" required placeholder="Dr. Asha Verma" /></div>
+        <div class="field"><label>Email *</label><input id="email" type="email" placeholder="asha.verma@example.ac.in" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Phone (mobile)</label><input id="phone" placeholder="+91 98xxxxxxx0" /></div>
+        <div class="field"><label>City, Country</label><input id="location" placeholder="Pune, IN" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Current title</label><input id="currentTitle" placeholder="Associate Dean" /></div>
+        <div class="field"><label>Current institution</label><input id="currentInstitution" placeholder="Pune Institute of Tech" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Years of experience</label><input id="yearsExperience" type="number" min="0" placeholder="15" /></div>
+        <div class="field"><label>Highest qualification</label><select id="highestQualification"></select></div>
+      </div>
+      <div class="field"><label>LinkedIn URL</label><input id="linkedinUrl" placeholder="https://linkedin.com/in/…" /></div>
+      <div class="field"><label>CV / portfolio link</label><input id="cvUrl" placeholder="https://… (optional)" /></div>
+
+      <div class="field">
+        <label>Roles you're open to *</label>
+        <div id="roles" style="display:flex; flex-wrap:wrap; gap:.5rem;"></div>
+      </div>
+
+      <div class="field" style="background: var(--surface-2); padding: 1rem; border-radius: 10px;">
+        <label style="display:flex; gap:.6rem; align-items:flex-start;">
+          <input type="checkbox" id="consent" style="width:auto; margin-top:.2rem;" />
+          <span id="consentText" class="hint" style="color: var(--ink-soft);"></span>
+        </label>
+      </div>
+
+      <button class="btn btn-primary" id="submit" type="submit" style="width:100%; justify-content:center;">Join the registry</button>
+      <p id="msg" style="margin-top:.8rem;"></p>
+    </form>
+
+    <section id="how" style="margin-top:2rem;">
+      <h3>How it works &amp; your rights</h3>
+      <ul class="muted" style="line-height:1.8;">
+        <li>We store your profile <strong>only with your consent</strong>, recorded with a timestamp (India DPDP).</li>
+        <li>Your details are shared with universities/recruiters <strong>for hiring purposes only</strong>.</li>
+        <li>You can <strong>withdraw anytime</strong> — your contact details are then suppressed and no longer shared.</li>
+      </ul>
+      <button class="btn btn-ghost btn-sm" id="withdrawBtn">Withdraw my consent</button>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); };
+    let META = { roles: [], qualifications: [], consentText: '' };
+
+    async function init() {
+      META = await (await fetch('/api/registry/meta')).json();
+      $('#consentText').textContent = META.consentText;
+      $('#highestQualification').innerHTML = '<option value="">—</option>' + META.qualifications.map((q) => `<option>${q}</option>`).join('');
+      $('#roles').innerHTML = META.roles.map((r) => `<label class="pill" style="cursor:pointer; padding:.35rem .6rem;"><input type="checkbox" value="${r}" style="width:auto; margin-right:.35rem;">${r}</label>`).join('');
+    }
+
+    $('#form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const desiredRoles = [...document.querySelectorAll('#roles input:checked')].map((i) => i.value);
+      if (!$('#consent').checked) return toast('Please give consent to join.');
+      if (!desiredRoles.length) return toast('Pick at least one role.');
+      const payload = {
+        fullName: $('#fullName').value, email: $('#email').value, phone: $('#phone').value,
+        location: $('#location').value, currentTitle: $('#currentTitle').value,
+        currentInstitution: $('#currentInstitution').value, yearsExperience: $('#yearsExperience').value,
+        highestQualification: $('#highestQualification').value, linkedinUrl: $('#linkedinUrl').value,
+        cvUrl: $('#cvUrl').value, desiredRoles, consent: true,
+      };
+      $('#submit').disabled = true;
+      try {
+        const res = await fetch('/api/registry/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (res.ok) { $('#msg').innerHTML = '<strong class="s-valid">You\'re in the registry. Universities can now find you.</strong>'; $('#form').reset(); init(); }
+        else $('#msg').innerHTML = `<strong class="s-bad">${data.error || 'Something went wrong'}</strong>`;
+      } catch (err) { toast(err.message); }
+      $('#submit').disabled = false;
+    });
+
+    $('#withdrawBtn').addEventListener('click', async () => {
+      const email = prompt('Enter the email you registered with to withdraw consent:');
+      if (!email) return;
+      const res = await fetch('/api/registry/withdraw', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+      toast(res.ok ? 'Consent withdrawn — your details are no longer shared.' : 'Could not find that registration.');
+    });
+
+    init();
+  </script>
+</body>
+</html>

@@ -38,6 +38,13 @@ the offline heuristic. Set `PORT` to change the port.
 - 🔌 Key-protected public REST API (`/api/v1/enrich`, `/api/v1/credits`).
 - 💳 Credit ledger with rollover.
 
+**Candidate registry (opt-in, consent-based)** — a public signup at `/registry`
+for job-seekers who **consent** to be listed for university hiring (Dean,
+Director of Admissions, Registrar, …). Consent + exact text + timestamp are
+recorded and written to the provenance log (India DPDP lawful basis); candidates
+can withdraw, which suppresses their data. Universities search the pool via the
+billed Data API (`/api/v1/people/search?candidatesOnly=true&role=Dean`).
+
 **Gaps closed (new vs. the leaders)**
 - 🔎 **Search DB** — searchable B2B contact database with facets + reveal-on-demand *(vs Apollo)*.
 - ✉️ **Sequences** — multi-step email+call cadences, templating, scheduling, reply tracking *(vs Apollo)*.

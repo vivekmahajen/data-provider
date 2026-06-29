@@ -20,6 +20,7 @@ import { newSequence, enroll, advance, placeCall } from './lib/sequences.js';
 import { id } from './lib/util.js';
 import { providerRouter, bootstrapProviderDB } from './provider-api.js';
 import { ensureBilling } from './billing.js';
+import { signupCandidate, withdrawConsent, registryStats, findPersonByEmail, CONSENT_TEXT, ROLES, QUALIFICATIONS } from './registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = resolve(__dirname, '../public');
@@ -249,11 +250,41 @@ app.get('/api/v1/credits', requireApiKey, (req, res) => res.json({ remaining: cr
 app.use('/api/v1', providerRouter());
 
 // ----------------------------------------------------------------------------
+// Candidate registry (opt-in, consent-based) — public intake for job-seekers.
+// ----------------------------------------------------------------------------
+app.get('/api/registry/meta', (req, res) => res.json({ consentText: CONSENT_TEXT, roles: ROLES, qualifications: QUALIFICATIONS }));
+
+app.post('/api/registry/signup', async (req, res) => {
+  try {
+    const out = await signupCandidate(req.body || {});
+    res.status(out.ok ? 200 : (out.status || 400)).json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/registry/withdraw', async (req, res) => {
+  try {
+    const { email, personId } = req.body || {};
+    let pid = personId;
+    if (!pid && email) {
+      const row = await findPersonByEmail(email);
+      pid = row?.id;
+    }
+    if (!pid) return res.status(404).json({ error: 'candidate not found' });
+    res.json(await withdrawConsent(pid));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/registry/stats', async (req, res) => {
+  try { res.json(await registryStats()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ----------------------------------------------------------------------------
 // Static site + health
 // ----------------------------------------------------------------------------
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use(express.static(PUBLIC_DIR));
 app.get('/app', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'app.html')));
+app.get('/registry', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'registry.html')));
 
 bootstrapProviderDB()
   .then(() => ensureBilling(getDB().account.apiKey))

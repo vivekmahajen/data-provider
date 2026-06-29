@@ -124,3 +124,22 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE INDEX IF NOT EXISTS idx_usage_customer   ON usage_events(customer_id, ts);
 CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
+
+-- ---- Candidate registry (opt-in, consent-based) ---------------------------
+CREATE TABLE IF NOT EXISTS candidate_profiles (
+  id                    TEXT PRIMARY KEY,
+  person_id             TEXT NOT NULL UNIQUE REFERENCES people(id),
+  desired_roles         TEXT,
+  current_title         TEXT,
+  current_institution   TEXT,
+  years_experience      INTEGER,
+  highest_qualification TEXT,
+  cv_url                TEXT,
+  available             INTEGER NOT NULL DEFAULT 1,
+  consent               INTEGER NOT NULL DEFAULT 0,
+  consent_text          TEXT,
+  consent_at            BIGINT,
+  created_at            BIGINT NOT NULL,
+  updated_at            BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_person ON candidate_profiles(person_id);
