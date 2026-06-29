@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FullEnrich — App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <a class="brand" href="/"><span class="logo">F</span> FullEnrich</a>
+      <div id="nav">
+        <div class="nav-item active" data-page="enrich"><span class="em">🌊</span> Enrich</div>
+        <div class="nav-item" data-page="search"><span class="em">🔎</span> Search DB</div>
+        <div class="nav-item" data-page="sequences"><span class="em">✉️</span> Sequences</div>
+        <div class="nav-item" data-page="dialer"><span class="em">📞</span> Dialer</div>
+        <div class="nav-item" data-page="airesearch"><span class="em">🤖</span> AI Research</div>
+        <div class="nav-item" data-page="workflows"><span class="em">🧱</span> Workflows</div>
+        <div class="nav-item" data-page="analytics"><span class="em">📊</span> Analytics</div>
+        <div class="nav-item" data-page="api"><span class="em">🔌</span> API &amp; Settings</div>
+      </div>
+      <div class="credits">
+        <div style="display:flex; justify-content:space-between; font-size:.85rem;">
+          <span class="muted">Credits</span><strong id="cr-text">—</strong>
+        </div>
+        <div class="bar"><i id="cr-bar" style="width:0%"></i></div>
+        <div class="hint" id="cr-plan" style="margin-top:.4rem;"></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- ENRICH -->
+      <section class="page active" id="page-enrich">
+        <div class="page-head"><h2>Waterfall enrichment</h2><span class="badge">core</span></div>
+        <div class="grid" style="grid-template-columns: 1fr 1fr;">
+          <div class="card">
+            <h3>Single contact</h3>
+            <div class="row">
+              <div class="field"><label>Full name</label><input id="e-name" placeholder="Jordan Patel" /></div>
+              <div class="field"><label>Company</label><input id="e-company" placeholder="Northstar Labs" /></div>
+            </div>
+            <div class="row">
+              <div class="field"><label>Domain (optional)</label><input id="e-domain" placeholder="northstarlabs.com" /></div>
+              <div class="field"><label>LinkedIn URL (optional)</label><input id="e-li" placeholder="https://linkedin.com/in/…" /></div>
+            </div>
+            <div style="display:flex; gap:1rem; margin:.4rem 0 1rem;">
+              <label style="display:flex; gap:.4rem; align-items:center;"><input type="checkbox" id="e-email" checked style="width:auto;" /> Email (1 cr)</label>
+              <label style="display:flex; gap:.4rem; align-items:center;"><input type="checkbox" id="e-phone" checked style="width:auto;" /> Mobile (10 cr)</label>
+            </div>
+            <button class="btn btn-primary" id="e-run">Run waterfall</button>
+            <div id="e-result" style="margin-top:1rem;"></div>
+          </div>
+          <div class="card">
+            <h3>Bulk CSV</h3>
+            <p class="hint">Columns: <span class="mono">fullName, company, domain, linkedinUrl</span> (any subset). Up to 1,000 rows.</p>
+            <div class="field"><input type="file" id="b-file" accept=".csv" /></div>
+            <button class="btn btn-ghost btn-sm" id="b-sample">Use sample list</button>
+            <button class="btn btn-primary btn-sm" id="b-run">Enrich list</button>
+            <div id="b-result" style="margin-top:1rem;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SEARCH -->
+      <section class="page" id="page-search">
+        <div class="page-head"><h2>Contact database &amp; search</h2><span class="badge">new · vs Apollo</span></div>
+        <div class="card">
+          <div class="row">
+            <div class="field"><label>Keyword</label><input id="s-q" placeholder="name, company, title" /></div>
+            <div class="field"><label>Title</label><input id="s-title" placeholder="VP Sales" /></div>
+            <div class="field"><label>Industry</label><select id="s-industry"><option value="">Any</option></select></div>
+            <div class="field"><label>Location</label><input id="s-location" placeholder="London" /></div>
+          </div>
+          <button class="btn btn-primary" id="s-run">Search</button>
+          <span class="hint" id="s-count" style="margin-left:.6rem;"></span>
+        </div>
+        <div class="card" style="margin-top:1rem; overflow:auto;">
+          <table id="s-table"><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Industry</th><th>Location</th><th>Contact</th></tr></thead><tbody></tbody></table>
+        </div>
+      </section>
+
+      <!-- SEQUENCES -->
+      <section class="page" id="page-sequences">
+        <div class="page-head"><h2>Outreach sequences</h2><span class="badge">new · vs Apollo</span></div>
+        <div class="grid" style="grid-template-columns: 1fr 1.4fr;">
+          <div class="card">
+            <h3>Create sequence</h3>
+            <div class="field"><label>Name</label><input id="seq-name" placeholder="Q3 outbound — VPs of Sales" /></div>
+            <p class="hint">Starts with a proven 4-step cadence (email → wait → email → call). You can advance sends to simulate the engine.</p>
+            <button class="btn btn-primary" id="seq-create">Create</button>
+          </div>
+          <div class="card">
+            <h3>Sequences</h3>
+            <div id="seq-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DIALER -->
+      <section class="page" id="page-dialer">
+        <div class="page-head"><h2>Dialer</h2><span class="badge">new</span></div>
+        <div class="card">
+          <p class="hint">Enrich a contact (or reveal one from Search) to get a mobile, then click-to-call. Outcomes are logged.</p>
+          <div class="row">
+            <div class="field"><label>Name</label><input id="d-name" placeholder="Jordan Patel" /></div>
+            <div class="field"><label>Phone</label><input id="d-phone" placeholder="+1 (415) 555-0142" /></div>
+          </div>
+          <button class="btn btn-primary" id="d-call">📞 Call</button>
+          <div id="d-log" style="margin-top:1rem;"></div>
+        </div>
+      </section>
+
+      <!-- AI RESEARCH -->
+      <section class="page" id="page-airesearch">
+        <div class="page-head"><h2>AI research</h2><span class="badge">new · vs Clay</span></div>
+        <div class="card">
+          <div class="row">
+            <div class="field"><label>Contact name</label><input id="ai-name" placeholder="Jordan Patel" /></div>
+            <div class="field"><label>Company</label><input id="ai-company" placeholder="Northstar Labs" /></div>
+            <div class="field"><label>Title</label><input id="ai-title" placeholder="VP Sales" /></div>
+          </div>
+          <div class="field"><label>Question</label><input id="ai-q" placeholder="Is this contact a good ICP fit? Write an icebreaker." /></div>
+          <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.8rem;">
+            <button class="btn btn-ghost btn-sm ai-preset">ICP fit score</button>
+            <button class="btn btn-ghost btn-sm ai-preset">Write an icebreaker</button>
+            <button class="btn btn-ghost btn-sm ai-preset">Summarise this contact</button>
+          </div>
+          <button class="btn btn-primary" id="ai-run">Research</button>
+          <div id="ai-out" style="margin-top:1rem;"></div>
+        </div>
+      </section>
+
+      <!-- WORKFLOWS -->
+      <section class="page" id="page-workflows">
+        <div class="page-head"><h2>Workflow builder</h2><span class="badge">new · vs Clay</span></div>
+        <div class="card">
+          <p class="hint">A programmable table: sample rows + stacked columns (derive domain → find email → find mobile → AI research). Run executes every column over every row in one pass.</p>
+          <div class="field"><label>AI column question</label><input id="wf-q" value="One-line ICP fit summary" /></div>
+          <button class="btn btn-primary" id="wf-run">Build &amp; run sample workflow</button>
+          <div id="wf-out" style="margin-top:1rem; overflow:auto;"></div>
+        </div>
+      </section>
+
+      <!-- ANALYTICS -->
+      <section class="page" id="page-analytics">
+        <div class="page-head"><h2>Analytics</h2><span class="badge">new</span><button class="btn btn-ghost btn-sm" id="an-refresh" style="margin-left:auto;">Refresh</button></div>
+        <div class="kpis" id="an-kpis"></div>
+        <div class="grid" style="grid-template-columns: 1fr 1fr;">
+          <div class="card"><h3>Provider wins</h3><div class="bars" id="an-providers"></div><p class="hint" id="an-empty"></p></div>
+          <div class="card"><h3>Credit usage (per event)</h3><div class="bars" id="an-series"></div></div>
+        </div>
+      </section>
+
+      <!-- API -->
+      <section class="page" id="page-api">
+        <div class="page-head"><h2>API &amp; settings</h2></div>
+        <div class="card">
+          <h3>Your API key</h3>
+          <p class="mono" id="api-key" style="background:var(--surface-3); padding:.6rem .8rem; border-radius:10px; display:inline-block;"></p>
+          <h3 style="margin-top:1.2rem;">Enrich via REST</h3>
+          <pre class="out" id="api-curl"></pre>
+          <button class="btn btn-primary btn-sm" id="api-try">Try it live</button>
+          <div id="api-out" style="margin-top:1rem;"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="/js/app.js"></script>
+</body>
+</html>
