@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Search Candidates — For Universities</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="container">
+      <a class="brand" href="/"><span class="logo">F</span> Candidate Search</a>
+      <nav class="nav-links"><a href="/registry">Candidate? Join here</a><a href="/privacy">Privacy</a></nav>
+    </div>
+  </header>
+
+  <main class="container" style="max-width: 980px; padding: 2rem 0;">
+    <h1 style="font-size: 2rem;">Find consented candidates for your roles</h1>
+    <p class="muted">Search opt-in candidates for Dean, Director of Admissions, Registrar and other leadership roles. Preview is free; revealing contact details uses credits.</p>
+
+    <div class="card" style="margin: 1rem 0;">
+      <div class="row">
+        <div class="field"><label>API key</label><input id="key" placeholder="fe_cust_… (from your account)" /></div>
+        <div class="field"><label>&nbsp;</label><button class="btn btn-ghost" id="saveKey">Save key</button></div>
+        <div class="field"><label>Credits</label><div id="credits" class="mono" style="padding:.6rem 0;">—</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="field"><label>Role</label><select id="role"><option value="">Any role</option></select></div>
+        <div class="field"><label>Qualification</label><select id="qualification"><option value="">Any</option></select></div>
+        <div class="field"><label>Min. experience (yrs)</label><input id="minExperience" type="number" min="0" placeholder="10" /></div>
+        <div class="field"><label>Location</label><input id="location" placeholder="Pune" /></div>
+      </div>
+      <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="preview">Preview (free)</button>
+        <button class="btn btn-primary" id="reveal">Reveal contacts (uses credits)</button>
+        <span class="hint" id="count" style="align-self:center;"></span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem; overflow:auto;">
+      <table id="results">
+        <thead><tr><th>Name</th><th>Now</th><th>Open to</th><th>Exp</th><th>Qual</th><th>Location</th><th>Contact</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="hint" id="empty" style="margin-top:.6rem;">Enter your API key and search.</p>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); };
+
+    $('#key').value = localStorage.getItem('uni_key') || '';
+    $('#saveKey').addEventListener('click', () => { localStorage.setItem('uni_key', $('#key').value.trim()); toast('Key saved'); refreshCredits(); });
+
+    async function init() {
+      const meta = await (await fetch('/api/registry/meta')).json();
+      $('#role').innerHTML = '<option value="">Any role</option>' + meta.roles.map((r) => `<option>${r}</option>`).join('');
+      $('#qualification').innerHTML = '<option value="">Any</option>' + meta.qualifications.map((q) => `<option>${q}</option>`).join('');
+      if ($('#key').value) refreshCredits();
+    }
+
+    function headers() { return { 'x-api-key': $('#key').value.trim() }; }
+
+    async function refreshCredits() {
+      try {
+        const u = await (await fetch('/api/v1/billing/usage', { headers: headers() })).json();
+        if (u.creditsRemaining != null) $('#credits').textContent = u.creditsRemaining + ' left';
+      } catch {}
+    }
+
+    function qs(preview) {
+      const p = new URLSearchParams({ candidatesOnly: 'true', limit: '50' });
+      if ($('#role').value) p.set('role', $('#role').value);
+      if ($('#qualification').value) p.set('qualification', $('#qualification').value);
+      if ($('#minExperience').value) p.set('minExperience', $('#minExperience').value);
+      if ($('#location').value) p.set('location', $('#location').value);
+      if (preview) p.set('preview', 'true');
+      return p.toString();
+    }
+
+    async function search(preview) {
+      if (!$('#key').value.trim()) return toast('Enter your API key first');
+      const btn = preview ? $('#preview') : $('#reveal');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/v1/people/search?' + qs(preview), { headers: headers() });
+        const data = await res.json();
+        if (!res.ok) { toast(data.error === 'insufficient_credits' ? `Out of credits (need ${data.needed})` : (data.error || 'error')); btn.disabled = false; return; }
+        render(data, preview);
+        $('#count').textContent = `${data.total} candidate(s) · ${preview ? 'preview (free)' : data.creditsCharged + ' credits charged'}`;
+        if (data.creditsRemaining != null) $('#credits').textContent = data.creditsRemaining + ' left';
+      } catch (e) { toast(e.message); }
+      btn.disabled = false;
+    }
+
+    function render(data, preview) {
+      const rows = data.items || [];
+      $('#empty').style.display = rows.length ? 'none' : 'block';
+      $('#empty').textContent = rows.length ? '' : 'No candidates match — try widening your filters.';
+      $('#results tbody').innerHTML = rows.map((p) => {
+        const contact = (p.contacts || []).map((c) => `<span class="mono">${esc(c.value)}</span>`).join('<br>') || '<span class="muted">—</span>';
+        return `<tr>
+          <td><strong>${esc(p.full_name)}</strong></td>
+          <td>${esc(p.title || '')}<br><span class="hint">${esc(p.current_institution || p.company || '')}</span></td>
+          <td>${esc(p.desired_roles || '')}</td>
+          <td>${p.years_experience ?? ''}</td>
+          <td>${esc(p.highest_qualification || '')}</td>
+          <td>${esc(p.location || '')}</td>
+          <td>${contact}${preview ? ' <span class="pill">masked</span>' : ''}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    $('#preview').addEventListener('click', () => search(true));
+    $('#reveal').addEventListener('click', () => search(false));
+    init();
+  </script>
+</body>
+</html>
