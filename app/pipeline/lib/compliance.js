@@ -10,15 +10,18 @@ const BLOCKED_REGIONS = new Set(
   (process.env.PIPELINE_BLOCK_REGIONS || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean)
 );
 
-export function isSuppressed(value) {
+export async function isSuppressed(value) {
   if (!value) return false;
-  return !!get('SELECT 1 AS x FROM suppressions WHERE value = :v', { v: String(value).toLowerCase() });
+  return !!(await get('SELECT 1 AS x FROM suppressions WHERE value = :v', { v: String(value).toLowerCase() }));
 }
 
-export function suppress(value, reason = 'opt_out') {
+export async function suppress(value, reason = 'opt_out') {
   if (!value) return;
-  run(`INSERT OR IGNORE INTO suppressions (value, reason, created_at) VALUES (:v, :r, :ts)`,
-    { v: String(value).toLowerCase(), r: reason, ts: now() });
+  const v = String(value).toLowerCase();
+  // portable upsert (no dialect-specific INSERT OR IGNORE / ON CONFLICT)
+  if (!(await get('SELECT 1 AS x FROM suppressions WHERE value = :v', { v }))) {
+    await run(`INSERT INTO suppressions (value, reason, created_at) VALUES (:v, :r, :ts)`, { v, r: reason, ts: now() });
+  }
 }
 
 export function regionAllowed(region) {
@@ -27,25 +30,25 @@ export function regionAllowed(region) {
 }
 
 // Decide whether a normalized record may enter the canonical store at all.
-export function gateRecord(rec) {
+export async function gateRecord(rec) {
   if (!regionAllowed(rec.region)) return { allowed: false, reason: `region_blocked:${rec.region}` };
-  if (rec.email && isSuppressed(rec.email)) return { allowed: false, reason: 'suppressed_email' };
-  if (rec.phone && isSuppressed(rec.phone)) return { allowed: false, reason: 'suppressed_phone' };
-  if (rec.domain && isSuppressed(rec.domain)) return { allowed: false, reason: 'suppressed_domain' };
+  if (rec.email && (await isSuppressed(rec.email))) return { allowed: false, reason: 'suppressed_email' };
+  if (rec.phone && (await isSuppressed(rec.phone))) return { allowed: false, reason: 'suppressed_phone' };
+  if (rec.domain && (await isSuppressed(rec.domain))) return { allowed: false, reason: 'suppressed_domain' };
   return { allowed: true };
 }
 
 // GDPR / CCPA erasure: remove a value everywhere and suppress it permanently so
 // it can never be re-ingested.
-export function eraseValue(value, reason = 'gdpr_erasure') {
+export async function eraseValue(value, reason = 'gdpr_erasure') {
   const v = String(value).toLowerCase();
-  run('DELETE FROM contact_points WHERE lower(value) = :v', { v });
-  suppress(v, reason);
+  await run('DELETE FROM contact_points WHERE lower(value) = :v', { v });
+  await suppress(v, reason);
   return { erased: v, reason };
 }
 
 // Export-time guarantee: only verified, resale-permitted, non-suppressed rows.
-export function exportableContacts(limit = 1000) {
+export async function exportableContacts(limit = 1000) {
   return all(
     `SELECT cp.kind, cp.value, cp.status, cp.confidence, p.full_name, p.title, c.name AS company, c.domain
        FROM contact_points cp

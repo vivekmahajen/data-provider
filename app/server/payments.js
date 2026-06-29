@@ -54,7 +54,7 @@ export async function createCheckout(customer, { kind, target, successUrl, cance
     url = session.url;
   }
 
-  run(
+  await run(
     `INSERT INTO payments (id, customer_id, kind, target, credits, amount_usd, provider, session_id, status, created_at)
      VALUES (:id, :cid, :kind, :target, :credits, :amount, :prov, :sid, 'open', :ts)`,
     { id: paymentId, cid: customer.id, kind, target, credits: item.credits, amount: item.amountUsd, prov, sid: sessionId, ts: now() }
@@ -63,22 +63,22 @@ export async function createCheckout(customer, { kind, target, successUrl, cance
 }
 
 // Apply a paid payment exactly once (idempotent). Grants credits / changes plan.
-function applyPayment(payment) {
+async function applyPayment(payment) {
   if (payment.status === 'paid') return { alreadyApplied: true };
-  const customer = get('SELECT * FROM customers WHERE id = :id', { id: payment.customer_id });
-  if (payment.kind === 'credits') topUp(customer, payment.credits, { paymentId: payment.id });
-  else if (payment.kind === 'plan') changePlan(customer, payment.target);
-  run(`UPDATE payments SET status = 'paid' WHERE id = :id`, { id: payment.id });
-  const updated = get('SELECT * FROM customers WHERE id = :id', { id: payment.customer_id });
+  const customer = await get('SELECT * FROM customers WHERE id = :id', { id: payment.customer_id });
+  if (payment.kind === 'credits') await topUp(customer, payment.credits, { paymentId: payment.id });
+  else if (payment.kind === 'plan') await changePlan(customer, payment.target);
+  await run(`UPDATE payments SET status = 'paid' WHERE id = :id`, { id: payment.id });
+  const updated = await get('SELECT * FROM customers WHERE id = :id', { id: payment.customer_id });
   return { applied: true, plan: updated.plan, creditsIncluded: updated.credits_included, creditsUsed: updated.credits_used };
 }
 
 // Simulated-mode "the customer paid" hook (no real Stripe).
-export function completeCheckout(paymentId) {
-  const payment = get('SELECT * FROM payments WHERE id = :id', { id: paymentId });
+export async function completeCheckout(paymentId) {
+  const payment = await get('SELECT * FROM payments WHERE id = :id', { id: paymentId });
   if (!payment) return { ok: false, error: 'payment_not_found' };
   if (payment.provider !== 'simulated') return { ok: false, error: 'use_stripe_webhook' };
-  return { ok: true, ...applyPayment(payment) };
+  return { ok: true, ...(await applyPayment(payment)) };
 }
 
 // ---- Real Stripe ----------------------------------------------------------
@@ -106,7 +106,7 @@ async function createStripeSession(customer, item, paymentId, { successUrl, canc
 
 // Stripe webhook receiver. Verifies the signature (if STRIPE_WEBHOOK_SECRET is
 // set) then applies the payment on checkout.session.completed.
-export function handleStripeWebhook(rawBody, signatureHeader) {
+export async function handleStripeWebhook(rawBody, signatureHeader) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (secret && !verifyStripeSignature(rawBody, signatureHeader, secret)) {
     return { ok: false, status: 400, error: 'invalid_signature' };
@@ -115,9 +115,9 @@ export function handleStripeWebhook(rawBody, signatureHeader) {
   try { event = JSON.parse(rawBody.toString('utf8')); } catch { return { ok: false, status: 400, error: 'bad_json' }; }
   if (event.type !== 'checkout.session.completed') return { ok: true, ignored: event.type };
   const paymentId = event.data?.object?.metadata?.paymentId || event.data?.object?.client_reference_id;
-  const payment = paymentId && get('SELECT * FROM payments WHERE id = :id', { id: paymentId });
+  const payment = paymentId && (await get('SELECT * FROM payments WHERE id = :id', { id: paymentId }));
   if (!payment) return { ok: false, status: 404, error: 'payment_not_found' };
-  return { ok: true, ...applyPayment(payment) };
+  return { ok: true, ...(await applyPayment(payment)) };
 }
 
 // Stripe signs with: t=timestamp,v1=HMAC_SHA256(`${t}.${rawBody}`, secret)

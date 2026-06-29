@@ -9,6 +9,7 @@
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js",
     "pipeline": "node pipeline/run.js",
+    "db:migrate": "node pipeline/migrate.js",
     "test": "node --test test/*.test.js",
     "test:pipeline": "node --test pipeline/test/*.test.js"
   },
@@ -18,5 +19,8 @@
   "dependencies": {
     "express": "^4.19.2",
     "multer": "^2.0.1"
+  },
+  "optionalDependencies": {
+    "pg": "^8.12.0"
   }
 }

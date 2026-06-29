@@ -1,12 +1,12 @@
 // Billing & metering for the Data API — how you charge customers for the data
 // you built. Each API customer has a key, a plan with included credits, and a
 // usage ledger. Delivering a real contact record (a PII value) costs credits;
-// previews (masked) are free. Backed by the same provider DB as the pipeline.
+// previews (masked) are free. Tables live in the schema; this module is logic.
 //
 // This is intentionally a usage-metering layer, not a payment processor: wire
-// Stripe to `topUp()` / plan changes when you take real money.
+// Stripe to topUp() / plan changes when you take real money (see payments.js).
 
-import { db, get, all, run, id, now } from '../pipeline/lib/db.js';
+import { get, all, run, id, now } from '../pipeline/lib/db.js';
 import { randomBytes } from 'node:crypto';
 
 // Monthly included credits per plan. Period reset is handled by maybeResetPeriod.
@@ -24,46 +24,11 @@ export const PRICES = {
 
 const PERIOD_MS = 30 * 86400000;
 
-export function ensureBilling(defaultKey) {
-  db().exec(`
-    CREATE TABLE IF NOT EXISTS customers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      api_key TEXT NOT NULL UNIQUE,
-      plan TEXT NOT NULL,
-      credits_included INTEGER NOT NULL,
-      credits_used INTEGER NOT NULL DEFAULT 0,
-      period_start INTEGER NOT NULL,
-      is_admin INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS usage_events (
-      id TEXT PRIMARY KEY,
-      customer_id TEXT NOT NULL REFERENCES customers(id),
-      endpoint TEXT NOT NULL,
-      units INTEGER NOT NULL,
-      ts INTEGER NOT NULL,
-      meta TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_usage_customer ON usage_events(customer_id, ts);
-    CREATE TABLE IF NOT EXISTS payments (
-      id TEXT PRIMARY KEY,
-      customer_id TEXT NOT NULL REFERENCES customers(id),
-      kind TEXT NOT NULL,            -- credits | plan
-      target TEXT NOT NULL,          -- pack id or plan name
-      credits INTEGER NOT NULL DEFAULT 0,
-      amount_usd INTEGER NOT NULL,   -- in whole dollars for the demo
-      provider TEXT NOT NULL,        -- stripe | simulated
-      session_id TEXT,
-      status TEXT NOT NULL DEFAULT 'open', -- open | paid | failed
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
-  `);
+export async function ensureBilling(defaultKey) {
   // Seed the admin/demo customer using the app's existing API key so current
   // flows (and the app's "try people search") keep working out of the box.
-  if (defaultKey && !get('SELECT 1 x FROM customers WHERE api_key = :k', { k: defaultKey })) {
-    run(
+  if (defaultKey && !(await get('SELECT 1 x FROM customers WHERE api_key = :k', { k: defaultKey }))) {
+    await run(
       `INSERT INTO customers (id, name, api_key, plan, credits_included, credits_used, period_start, is_admin, created_at)
        VALUES (:id, 'Demo (admin)', :key, 'pro', :credits, 0, :ts, 1, :ts)`,
       { id: id(), key: defaultKey, credits: PLANS.pro.credits, ts: now() }
@@ -71,44 +36,46 @@ export function ensureBilling(defaultKey) {
   }
 }
 
-export function getCustomerByKey(key) {
+export async function getCustomerByKey(key) {
   if (!key) return null;
-  const c = get('SELECT * FROM customers WHERE api_key = :k', { k: key });
-  if (c) maybeResetPeriod(c);
-  return c ? get('SELECT * FROM customers WHERE id = :id', { id: c.id }) : null;
+  const c = await get('SELECT * FROM customers WHERE api_key = :k', { k: key });
+  if (!c) return null;
+  await maybeResetPeriod(c);
+  return get('SELECT * FROM customers WHERE id = :id', { id: c.id });
 }
 
-function maybeResetPeriod(c) {
+async function maybeResetPeriod(c) {
   if (now() - c.period_start >= PERIOD_MS) {
-    run('UPDATE customers SET credits_used = 0, period_start = :ts WHERE id = :id', { ts: now(), id: c.id });
+    await run('UPDATE customers SET credits_used = 0, period_start = :ts WHERE id = :id', { ts: now(), id: c.id });
   }
 }
 
+// Pure: remaining balance for a loaded customer row.
 export function remaining(c) {
   return Math.max(0, c.credits_included - c.credits_used);
 }
 
-// Check + charge atomically (SQLite is synchronous). Returns
-// { ok, charged, remaining } or { ok:false, needed, remaining }.
-export function charge(customer, endpoint, units, meta = {}) {
-  const cust = get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
+// Check + charge. Returns { ok, charged, remaining } or { ok:false, needed, remaining }.
+export async function charge(customer, endpoint, units, meta = {}) {
+  const cust = await get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
   const rem = remaining(cust);
   if (units > 0 && rem < units) {
     return { ok: false, needed: units, remaining: rem };
   }
   if (units > 0) {
-    run('UPDATE customers SET credits_used = credits_used + :u WHERE id = :id', { u: units, id: cust.id });
-    run(`INSERT INTO usage_events (id, customer_id, endpoint, units, ts, meta) VALUES (:id, :cid, :ep, :u, :ts, :meta)`,
+    await run('UPDATE customers SET credits_used = credits_used + :u WHERE id = :id', { u: units, id: cust.id });
+    await run(`INSERT INTO usage_events (id, customer_id, endpoint, units, ts, meta) VALUES (:id, :cid, :ep, :u, :ts, :meta)`,
       { id: id(), cid: cust.id, ep: endpoint, u: units, ts: now(), meta: JSON.stringify(meta) });
   }
-  return { ok: true, charged: units, remaining: remaining(get('SELECT * FROM customers WHERE id = :id', { id: cust.id })) };
+  const after = await get('SELECT * FROM customers WHERE id = :id', { id: cust.id });
+  return { ok: true, charged: units, remaining: remaining(after) };
 }
 
-export function createCustomer({ name, plan = 'free' }) {
+export async function createCustomer({ name, plan = 'free' }) {
   if (!PLANS[plan]) throw new Error(`unknown plan: ${plan}`);
   const key = 'fe_cust_' + randomBytes(12).toString('hex');
   const cid = id();
-  run(
+  await run(
     `INSERT INTO customers (id, name, api_key, plan, credits_included, credits_used, period_start, is_admin, created_at)
      VALUES (:id, :name, :key, :plan, :credits, 0, :ts, 0, :ts)`,
     { id: cid, name: name || 'Customer', key, plan, credits: PLANS[plan].credits, ts: now() }
@@ -116,30 +83,28 @@ export function createCustomer({ name, plan = 'free' }) {
   return get('SELECT * FROM customers WHERE id = :id', { id: cid });
 }
 
-// Grant purchased credits (called after a successful payment). Adds to the
-// included pool so the customer's remaining balance goes up immediately.
-export function topUp(customer, credits, meta = {}) {
+// Grant purchased credits (called after a successful payment).
+export async function topUp(customer, credits, meta = {}) {
   if (credits > 0) {
-    run('UPDATE customers SET credits_included = credits_included + :c WHERE id = :id', { c: credits, id: customer.id });
-    run(`INSERT INTO usage_events (id, customer_id, endpoint, units, ts, meta) VALUES (:id, :cid, 'topup', :u, :ts, :meta)`,
+    await run('UPDATE customers SET credits_included = credits_included + :c WHERE id = :id', { c: credits, id: customer.id });
+    await run(`INSERT INTO usage_events (id, customer_id, endpoint, units, ts, meta) VALUES (:id, :cid, 'topup', :u, :ts, :meta)`,
       { id: id(), cid: customer.id, u: -credits, ts: now(), meta: JSON.stringify(meta) });
   }
   return get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
 }
 
-// Move a customer to a new plan: set the included allotment and start a fresh
-// period. Called after a successful plan-upgrade payment.
-export function changePlan(customer, plan) {
+// Move a customer to a new plan: set the included allotment and start a fresh period.
+export async function changePlan(customer, plan) {
   if (!PLANS[plan]) throw new Error(`unknown plan: ${plan}`);
-  run('UPDATE customers SET plan = :p, credits_included = :c, credits_used = 0, period_start = :ts WHERE id = :id',
+  await run('UPDATE customers SET plan = :p, credits_included = :c, credits_used = 0, period_start = :ts WHERE id = :id',
     { p: plan, c: PLANS[plan].credits, ts: now(), id: customer.id });
   return get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
 }
 
-export function usageSummary(customer) {
-  const c = get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
-  const events = all('SELECT endpoint, units, ts, meta FROM usage_events WHERE customer_id = :id ORDER BY ts DESC LIMIT 25', { id: c.id });
-  const byEndpoint = all('SELECT endpoint, SUM(units) units, COUNT(*) calls FROM usage_events WHERE customer_id = :id GROUP BY endpoint', { id: c.id });
+export async function usageSummary(customer) {
+  const c = await get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
+  const events = await all('SELECT endpoint, units, ts, meta FROM usage_events WHERE customer_id = :id ORDER BY ts DESC LIMIT 25', { id: c.id });
+  const byEndpoint = await all('SELECT endpoint, SUM(units) units, COUNT(*) calls FROM usage_events WHERE customer_id = :id GROUP BY endpoint', { id: c.id });
   return {
     customer: { name: c.name, plan: c.plan, isAdmin: !!c.is_admin },
     creditsIncluded: c.credits_included,

@@ -118,13 +118,35 @@ Stripe webhook at `POST /api/v1/billing/webhook` — `checkout.session.completed
 grants credits (`billing.topUp`) or switches plan (`billing.changePlan`),
 idempotently. Signature is verified against the raw request body.
 
-## Moving to Postgres
+## Postgres (production backend)
 
-Swap `lib/db.js` for a `pg` Pool exposing the same `run/get/all` helpers and run
-`schema.sql` (change `INTEGER`→`BIGINT`, keep TEXT ids). Everything else is
-plain SQL and unchanged. For scale, put a queue (pg-boss/BullMQ/Temporal) behind
-`lib/jobs.js`, a stream (Kafka) in front of stage 2, and a search index
-(OpenSearch/Typesense) alongside the canonical store for the search product.
+The data layer (`lib/db.js`) is backend-pluggable and **async**:
+
+```bash
+# SQLite (default) — zero deps, used by the demo + tests
+npm start
+
+# Postgres — just set DATABASE_URL; the schema is applied on connect
+DATABASE_URL=postgres://user:pass@host:5432/db npm run db:migrate
+DATABASE_URL=postgres://user:pass@host:5432/db npm start
+```
+
+How it works: `open()` selects SQLite or, when `DATABASE_URL` is set, a `pg` Pool
+(lazy-imported, so SQLite users don't need it). Both expose the same async
+`get/all/run/exec`; `:name` params are converted to Postgres `$n` automatically
+(`toPg`, unit-tested). The Postgres DDL is `schema.postgres.sql` (BIGINT for
+ms-epoch timestamps; otherwise identical to `schema.sql`). All SQL is portable —
+the one non-portable spot (suppression upsert) is done in JS.
+
+> Verified: every async call site is exercised by the test suite on the SQLite
+> backend, and the `:name`→`$n` conversion is unit-tested. The pg path shares
+> those call sites but has not been run against a live Postgres in this
+> environment (none available) — point `DATABASE_URL` at a real instance and run
+> `npm run db:migrate` to validate end-to-end.
+
+For further scale: put a queue (pg-boss/BullMQ/Temporal) behind `lib/jobs.js`, a
+stream (Kafka) in front of stage 2, and a search index (OpenSearch/Typesense)
+alongside the canonical store for the search product.
 
 ## Honest limitations
 

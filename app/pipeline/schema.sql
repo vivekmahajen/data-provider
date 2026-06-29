@@ -105,3 +105,38 @@ CREATE INDEX IF NOT EXISTS idx_cp_person         ON contact_points(person_id);
 CREATE INDEX IF NOT EXISTS idx_cp_value          ON contact_points(value);
 CREATE INDEX IF NOT EXISTS idx_prov_entity       ON provenance(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_due          ON jobs(status, run_after);
+
+-- ---- Billing / payments (Data API monetization) ---------------------------
+CREATE TABLE IF NOT EXISTS customers (
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL,
+  api_key          TEXT NOT NULL UNIQUE,
+  plan             TEXT NOT NULL,
+  credits_included INTEGER NOT NULL,
+  credits_used     INTEGER NOT NULL DEFAULT 0,
+  period_start     INTEGER NOT NULL,
+  is_admin         INTEGER NOT NULL DEFAULT 0,
+  created_at       INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usage_events (
+  id          TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  endpoint    TEXT NOT NULL,
+  units       INTEGER NOT NULL,
+  ts          INTEGER NOT NULL,
+  meta        TEXT
+);
+CREATE TABLE IF NOT EXISTS payments (
+  id          TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  kind        TEXT NOT NULL,
+  target      TEXT NOT NULL,
+  credits     INTEGER NOT NULL DEFAULT 0,
+  amount_usd  INTEGER NOT NULL,
+  provider    TEXT NOT NULL,
+  session_id  TEXT,
+  status      TEXT NOT NULL DEFAULT 'open',
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_usage_customer  ON usage_events(customer_id, ts);
+CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
