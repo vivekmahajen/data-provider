@@ -1,0 +1,9 @@
+node_modules/
+app/node_modules/
+app/data/db.json
+app/data/provider.db
+app/data/provider.db-shm
+app/data/provider.db-wal
+npm-debug.log*
+.DS_Store
+*.log

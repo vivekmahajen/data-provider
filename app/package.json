@@ -1,0 +1,26 @@
+{
+  "name": "fullenrich-rebuild",
+  "version": "1.0.0",
+  "description": "Rebuild of FullEnrich preserving its visual identity and closing every capability gap vs. Clay, Apollo and BetterContact (search DB, sequences, dialer, AI research, workflow builder, analytics).",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "seed": "node server/seed.js",
+    "pipeline": "node pipeline/run.js",
+    "db:migrate": "node pipeline/migrate.js",
+    "test": "node --test test/*.test.js",
+    "test:pipeline": "node --test pipeline/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^2.0.1"
+  },
+  "optionalDependencies": {
+    "pg": "^8.12.0"
+  }
+}
