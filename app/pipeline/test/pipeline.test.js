@@ -60,8 +60,8 @@ test('erasure removes a value and prevents resurfacing', () => {
   assert.ok(get(`SELECT 1 x FROM suppressions WHERE value = 'jordan.patel@northstarlabs.com'`));
 });
 
-test('reverify refreshes contacts without error', () => {
-  const n = reverifyStale(100);
+test('reverify refreshes contacts without error', async () => {
+  const n = await reverifyStale(100);
   assert.ok(n >= 0);
 });
 

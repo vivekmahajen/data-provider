@@ -9,8 +9,8 @@
     "dev": "node --watch server/index.js",
     "seed": "node server/seed.js",
     "pipeline": "node pipeline/run.js",
-    "test": "node --test test/",
-    "test:pipeline": "node --test pipeline/test/"
+    "test": "node --test test/*.test.js",
+    "test:pipeline": "node --test pipeline/test/*.test.js"
   },
   "engines": {
     "node": ">=18"

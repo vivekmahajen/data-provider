@@ -11,8 +11,8 @@ import { db, get, run, all, id, now, ensureSource, recordProvenance } from './db
 import { normalizeRecord } from './normalize.js';
 import { gateRecord, isSuppressed } from './compliance.js';
 import { resolveCompany, resolvePerson } from './identity.js';
-import { verifyValue } from './verify.js';
 import { scoreContactPoint } from './scoring.js';
+import { getVerifier } from '../verifiers/index.js';
 import { enrichContact } from '../../server/lib/enrichment.js';
 
 function upsertContactPoint(personId, kind, value, source) {
@@ -36,11 +36,21 @@ function upsertContactPoint(personId, kind, value, source) {
   return { added: true, id: cpid };
 }
 
-function verifyAndScore(cpId) {
+async function verifyAndScore(cpId, verifier) {
   const cp = get('SELECT * FROM contact_points WHERE id = :id', { id: cpId });
   if (!cp) return;
   const src = get('SELECT type FROM sources WHERE id = :id', { id: cp.source_id });
-  const v = verifyValue(cp.kind, cp.value);
+  // person context lets real verifiers (e.g. Apollo match) identify the record
+  const person = get(
+    `SELECT p.full_name, p.first_name, p.last_name, p.linkedin_url, c.name AS company, c.domain
+       FROM people p LEFT JOIN companies c ON c.id = p.company_id WHERE p.id = :id`,
+    { id: cp.person_id }
+  );
+  const ctx = person
+    ? { fullName: person.full_name, firstName: person.first_name, lastName: person.last_name,
+        company: person.company, domain: person.domain, linkedinUrl: person.linkedin_url }
+    : {};
+  const v = await verifier.verify(cp.kind, cp.value, ctx);
   const ts = now();
   const confidence = scoreContactPoint({
     status: v.status, sourceType: src?.type, value: cp.value, verifiedAt: ts, nowTs: ts,
@@ -53,6 +63,7 @@ function verifyAndScore(cpId) {
 export function ingest(connectorRecords, source, { enrich = false } = {}) {
   // connectorRecords: iterable/async-iterable of raw records; source: {name,type,...}
   const src = ensureSource(source);
+  const verifier = getVerifier();
   const enrichSrc = enrich
     ? ensureSource({ name: 'waterfall-enrichment', type: 'third_party_verify', license: 'provider APIs — verify/enrich only, NOT resellable', resaleAllowed: false })
     : null;
@@ -103,20 +114,22 @@ export function ingest(connectorRecords, source, { enrich = false } = {}) {
       }
 
       // 6/7. verify + score the new contact points
-      for (const cpId of newCps) { verifyAndScore(cpId); stats.verified++; }
+      for (const cpId of newCps) { await verifyAndScore(cpId, verifier); stats.verified++; }
     }
+    stats.verifier = verifier.name;
     return stats;
   })();
 }
 
 // Re-verification: pick the N oldest verified contacts and re-check them
 // (data decay defense). Returns how many were refreshed.
-export function reverifyStale(limit = 50) {
+export async function reverifyStale(limit = 50) {
+  const verifier = getVerifier();
   const rows = all(
     `SELECT id FROM contact_points WHERE status IN ('valid','catch_all','unverified')
       ORDER BY COALESCE(verified_at, 0) ASC LIMIT :limit`,
     { limit }
   );
-  for (const r of rows) verifyAndScore(r.id);
+  for (const r of rows) await verifyAndScore(r.id, verifier);
   return rows.length;
 }

@@ -39,7 +39,7 @@ async function main() {
     console.log('kind,value,status,confidence,full_name,title,company,domain');
     for (const r of rows) console.log([r.kind, r.value, r.status, r.confidence, r.full_name, r.title, r.company, r.domain].map((x) => x ?? '').join(','));
   } else if (cmd === 'reverify') {
-    const n = reverifyStale(Number(process.argv[3]) || 50);
+    const n = await reverifyStale(Number(process.argv[3]) || 50);
     console.log(`Re-verified ${n} contacts.`);
   } else if (cmd === 'suppress') {
     suppress(process.argv[3], process.argv[4] || 'opt_out');

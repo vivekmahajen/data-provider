@@ -16,7 +16,7 @@ export function scheduleReverify(delayMs = 0, batch = 50) {
 }
 
 // Run all jobs whose run_after has passed. Returns a summary.
-export function runDue() {
+export async function runDue() {
   const due = all(`SELECT * FROM jobs WHERE status = 'queued' AND run_after <= :t ORDER BY run_after ASC`, { t: now() });
   const summary = { ran: 0, reverified: 0 };
   for (const job of due) {
@@ -24,7 +24,7 @@ export function runDue() {
     let n = 0;
     try {
       if (job.kind === 'reverify_sweep') {
-        n = reverifyStale(JSON.parse(job.payload).batch || 50);
+        n = await reverifyStale(JSON.parse(job.payload).batch || 50);
         summary.reverified += n;
       }
     } catch {
