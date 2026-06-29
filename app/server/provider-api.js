@@ -16,6 +16,7 @@ import { open, all, get } from '../pipeline/lib/db.js';
 import { suppress } from '../pipeline/lib/compliance.js';
 import { ingest } from '../pipeline/lib/pipeline.js';
 import { CSVConnector } from '../pipeline/connectors/csv.js';
+import { getCustomerByKey, charge, usageSummary, createCustomer, PRICES } from './billing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -44,10 +45,30 @@ function contactPointsFor(personId, { resaleOnly }) {
   );
 }
 
+// Identify the calling customer by API key (billing + auth in one).
+function requireCustomer(req, res, next) {
+  const key = req.header('x-api-key') || (req.header('authorization') || '').replace(/^Bearer\s+/i, '');
+  const customer = getCustomerByKey(key);
+  if (!customer) return res.status(401).json({ error: 'invalid_api_key' });
+  req.customer = customer;
+  next();
+}
+
+function maskValue(kind, value) {
+  if (kind === 'email') {
+    const [u, d] = String(value).split('@');
+    return (u || '').slice(0, 2) + '•••@' + (d || '');
+  }
+  return '••• ••• ' + String(value).slice(-2);
+}
+
 export function providerRouter() {
   const r = express.Router();
+  r.use(requireCustomer); // every Data API route is authenticated + billable
 
   // GET /api/v1/people/search — filterable directory query.
+  // Delivering real values costs PRICES.record per contact; ?preview=true masks
+  // values and is free.
   r.get('/people/search', (req, res) => {
     const { q, title, industry, location, domain, region, minConfidence } = req.query;
     const resaleOnly = req.query.resaleOnly !== 'false';
@@ -76,11 +97,22 @@ export function providerRouter() {
       { ...params, limit, offset }
     );
     const minConf = Number(minConfidence) || 0;
+    const preview = req.query.preview === 'true';
     const items = rows.map((p) => ({
       ...p,
       contacts: contactPointsFor(p.id, { resaleOnly }).filter((cp) => cp.confidence >= minConf),
     }));
-    res.json({ total, limit, offset, resaleOnly, items });
+
+    // meter: one credit per delivered contact value (free when previewing masked)
+    const deliverable = items.reduce((n, it) => n + it.contacts.length, 0);
+    const units = preview ? 0 : deliverable * PRICES.record;
+    const bill = charge(req.customer, 'people/search', units, { results: items.length, delivered: deliverable });
+    if (!bill.ok) return res.status(402).json({ error: 'insufficient_credits', needed: bill.needed, remaining: bill.remaining });
+    if (preview) items.forEach((it) => it.contacts.forEach((cp) => { cp.value = maskValue(cp.kind, cp.value); cp.preview = true; }));
+
+    res.set('X-Credits-Charged', String(bill.charged || 0));
+    res.set('X-Credits-Remaining', String(bill.remaining));
+    res.json({ total, limit, offset, resaleOnly, preview, creditsCharged: bill.charged || 0, creditsRemaining: bill.remaining, items });
   });
 
   // GET /api/v1/people/:id — single canonical record with provenance.
@@ -93,6 +125,10 @@ export function providerRouter() {
     );
     if (!p) return res.status(404).json({ error: 'not_found' });
     const contacts = contactPointsFor(p.id, { resaleOnly });
+    const preview = req.query.preview === 'true';
+    const bill = charge(req.customer, 'people/get', preview ? 0 : contacts.length * PRICES.record, { personId: p.id });
+    if (!bill.ok) return res.status(402).json({ error: 'insufficient_credits', needed: bill.needed, remaining: bill.remaining });
+    if (preview) contacts.forEach((cp) => { cp.value = maskValue(cp.kind, cp.value); cp.preview = true; });
     const provenance = all(
       `SELECT pr.field, pr.value, s.name AS source, s.type, pr.observed_at
          FROM provenance pr JOIN sources s ON s.id = pr.source_id
@@ -100,7 +136,9 @@ export function providerRouter() {
         ORDER BY pr.observed_at`,
       { id: p.id }
     );
-    res.json({ ...p, contacts, provenance });
+    res.set('X-Credits-Charged', String(bill.charged || 0));
+    res.set('X-Credits-Remaining', String(bill.remaining));
+    res.json({ ...p, contacts, provenance, creditsCharged: bill.charged || 0, creditsRemaining: bill.remaining });
   });
 
   // GET /api/v1/export.csv — bulk resale-safe export.
@@ -116,7 +154,12 @@ export function providerRouter() {
         ORDER BY cp.confidence DESC LIMIT :limit`,
       { limit }
     );
+    // meter the full export up front; reject (don't partially bill) if short
+    const bill = charge(req.customer, 'export.csv', rows.length * PRICES.record, { rows: rows.length });
+    if (!bill.ok) return res.status(402).json({ error: 'insufficient_credits', needed: bill.needed, remaining: bill.remaining });
     res.setHeader('content-type', 'text/csv');
+    res.set('X-Credits-Charged', String(bill.charged || 0));
+    res.set('X-Credits-Remaining', String(bill.remaining));
     res.write('kind,value,status,confidence,full_name,title,company,domain\n');
     for (const r2 of rows) {
       res.write([r2.kind, r2.value, r2.status, r2.confidence, csv(r2.full_name), csv(r2.title), csv(r2.company), r2.domain].join(',') + '\n');
@@ -141,6 +184,20 @@ export function providerRouter() {
     if (!value) return res.status(400).json({ error: 'value required' });
     suppress(value, reason || 'opt_out');
     res.json({ suppressed: String(value).toLowerCase(), reason: reason || 'opt_out' });
+  });
+
+  // GET /api/v1/billing/usage — the caller's plan, balance and usage ledger.
+  r.get('/billing/usage', (req, res) => res.json(usageSummary(req.customer)));
+
+  // POST /api/v1/billing/customers — provision a new customer + key (admin only).
+  r.post('/billing/customers', (req, res) => {
+    if (!req.customer.is_admin) return res.status(403).json({ error: 'admin_key_required' });
+    try {
+      const c = createCustomer({ name: req.body?.name, plan: req.body?.plan || 'free' });
+      res.json({ id: c.id, name: c.name, apiKey: c.api_key, plan: c.plan, creditsIncluded: c.credits_included });
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
   });
 
   return r;

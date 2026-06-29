@@ -19,6 +19,7 @@ import { newWorkflow, addColumn, runWorkflow, COLUMN_TYPES } from './lib/workflo
 import { newSequence, enroll, advance, placeCall } from './lib/sequences.js';
 import { id } from './lib/util.js';
 import { providerRouter, bootstrapProviderDB } from './provider-api.js';
+import { ensureBilling } from './billing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = resolve(__dirname, '../public');
@@ -241,9 +242,10 @@ app.post('/api/v1/enrich', requireApiKey, (req, res) => {
 });
 app.get('/api/v1/credits', requireApiKey, (req, res) => res.json({ remaining: creditsRemaining() }));
 
-// Serving layer over the canonical provider DB built by the pipeline
-// (/api/v1/people/search, /people/:id, /export.csv, /stats, /suppress).
-app.use('/api/v1', requireApiKey, providerRouter());
+// Serving layer over the canonical provider DB built by the pipeline. These
+// routes do their own per-customer auth + billing (see provider-api.js), so the
+// global requireApiKey is intentionally not applied here.
+app.use('/api/v1', providerRouter());
 
 // ----------------------------------------------------------------------------
 // Static site + health
@@ -253,6 +255,7 @@ app.use(express.static(PUBLIC_DIR));
 app.get('/app', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'app.html')));
 
 bootstrapProviderDB()
+  .then(() => ensureBilling(getDB().account.apiKey))
   .catch((e) => console.error('provider DB bootstrap failed:', e.message))
   .finally(() => {
     app.listen(PORT, () => {

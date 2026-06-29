@@ -80,6 +80,26 @@ This closes the loop: **ingest → canonical DB → serving API → customers**,
 compliance enforced at query time (a suppressed value disappears from search and
 export immediately).
 
+### Billing & metering (charging customers)
+
+Every Data API request is authenticated by a **per-customer key** and metered
+(`server/billing.js`): **1 credit per delivered contact value**; `?preview=true`
+returns masked values for **free**; a depleted balance returns **402** without
+partial billing. Each customer has a plan (`free`/`starter`/`pro`/`scale`) with
+included monthly credits and a usage ledger. The app's existing key is seeded as
+an admin customer so nothing breaks.
+
+```bash
+ADMIN=$(curl -s localhost:3000/api/app/account | grep -o 'fe_live_[a-z0-9_]*')
+curl -H "x-api-key: $ADMIN" localhost:3000/api/v1/billing/usage          # plan, balance, ledger
+# provision a customer (admin only) → returns a fe_cust_… key
+curl -H "x-api-key: $ADMIN" -X POST localhost:3000/api/v1/billing/customers -d '{"name":"Acme","plan":"starter"}'
+curl -H "x-api-key: $ADMIN" "localhost:3000/api/v1/people/search?q=Sales&preview=true"  # free preview
+```
+
+Responses carry `X-Credits-Charged` / `X-Credits-Remaining`. This is metering,
+not payments — wire Stripe to `billing.topUp()` / plan changes to take money.
+
 ## Moving to Postgres
 
 Swap `lib/db.js` for a `pg` Pool exposing the same `run/get/all` helpers and run

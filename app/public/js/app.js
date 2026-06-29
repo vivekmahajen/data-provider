@@ -257,6 +257,22 @@ async function setupApi() {
     } catch (err) { toast(err.message); }
     busy(e.target, false);
   });
+  $('#api-usage').addEventListener('click', async (e) => {
+    busy(e.target, true);
+    try {
+      const u = await api('/api/v1/billing/usage', { headers: { 'x-api-key': a.apiKey } });
+      $('#api-search-out').innerHTML = `<div class="card"><strong>${esc(u.customer.name)}</strong> · ${esc(u.customer.plan)} plan
+        <div class="kpis" style="margin-top:.6rem;">
+          <div class="card kpi"><div class="n">${u.creditsRemaining}</div><div class="l">credits left</div></div>
+          <div class="card kpi"><div class="n">${u.creditsUsed}</div><div class="l">used</div></div>
+          <div class="card kpi"><div class="n">${u.creditsIncluded}</div><div class="l">included</div></div>
+        </div>
+        <table style="margin-top:.6rem;"><thead><tr><th>Endpoint</th><th>Calls</th><th>Credits</th></tr></thead><tbody>
+        ${u.byEndpoint.map((b) => `<tr><td class="mono">${esc(b.endpoint)}</td><td>${b.calls}</td><td>${b.units}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">no usage yet</td></tr>'}
+        </tbody></table></div>`;
+    } catch (err) { toast(err.message); }
+    busy(e.target, false);
+  });
 }
 
 // ---- Init ----
