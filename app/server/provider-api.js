@@ -17,6 +17,7 @@ import { suppress } from '../pipeline/lib/compliance.js';
 import { ingest } from '../pipeline/lib/pipeline.js';
 import { CSVConnector } from '../pipeline/connectors/csv.js';
 import { getCustomerByKey, charge, usageSummary, createCustomer, PRICES } from './billing.js';
+import { createCheckout, completeCheckout, handleStripeWebhook, provider, CREDIT_PACKS, PLAN_PRICES } from './payments.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -64,7 +65,15 @@ function maskValue(kind, value) {
 
 export function providerRouter() {
   const r = express.Router();
-  r.use(requireCustomer); // every Data API route is authenticated + billable
+
+  // Stripe webhook — must be BEFORE requireCustomer (Stripe has no API key) and
+  // uses the raw body captured by express.json's verify hook (see index.js).
+  r.post('/billing/webhook', (req, res) => {
+    const out = handleStripeWebhook(req.rawBody || Buffer.from(JSON.stringify(req.body || {})), req.header('stripe-signature'));
+    res.status(out.ok ? 200 : (out.status || 400)).json(out);
+  });
+
+  r.use(requireCustomer); // every other Data API route is authenticated + billable
 
   // GET /api/v1/people/search — filterable directory query.
   // Delivering real values costs PRICES.record per contact; ?preview=true masks
@@ -198,6 +207,29 @@ export function providerRouter() {
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
+  });
+
+  // GET /api/v1/billing/catalog — buyable credit packs & plan prices.
+  r.get('/billing/catalog', (req, res) => res.json({ provider: provider(), creditPacks: CREDIT_PACKS, planPrices: PLAN_PRICES }));
+
+  // POST /api/v1/billing/checkout — start a purchase (credit pack or plan).
+  r.post('/billing/checkout', async (req, res) => {
+    try {
+      const out = await createCheckout(req.customer, {
+        kind: req.body?.kind, target: req.body?.target,
+        successUrl: req.body?.successUrl, cancelUrl: req.body?.cancelUrl,
+      });
+      res.json(out);
+    } catch (e) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // POST /api/v1/billing/checkout/:id/complete — simulated-mode payment success.
+  // (In Stripe mode, completion arrives via the webhook instead.)
+  r.post('/billing/checkout/:id/complete', (req, res) => {
+    const out = completeCheckout(req.params.id);
+    res.status(out.ok ? 200 : 400).json(out);
   });
 
   return r;

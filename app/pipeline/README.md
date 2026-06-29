@@ -97,8 +97,26 @@ curl -H "x-api-key: $ADMIN" -X POST localhost:3000/api/v1/billing/customers -d '
 curl -H "x-api-key: $ADMIN" "localhost:3000/api/v1/people/search?q=Sales&preview=true"  # free preview
 ```
 
-Responses carry `X-Credits-Charged` / `X-Credits-Remaining`. This is metering,
-not payments — wire Stripe to `billing.topUp()` / plan changes to take money.
+Responses carry `X-Credits-Charged` / `X-Credits-Remaining`.
+
+### Payments (Stripe)
+
+Customers buy credit packs or upgrade plans via Stripe Checkout
+(`server/payments.js`). Real Stripe is used when `STRIPE_SECRET_KEY` is set;
+otherwise a **simulated** provider runs the whole flow with no keys.
+
+```bash
+curl -H "x-api-key: $CKEY" localhost:3000/api/v1/billing/catalog            # packs + plan prices
+# start a purchase → returns a checkout url (Stripe-hosted, or a simulated complete url)
+curl -H "x-api-key: $CKEY" -X POST localhost:3000/api/v1/billing/checkout -d '{"kind":"credits","target":"pack_1k"}'
+# simulated mode: "pay" by POSTing to the returned url; Stripe mode: completion arrives via webhook
+curl -H "x-api-key: $CKEY" -X POST localhost:3000/api/v1/billing/checkout/<paymentId>/complete
+```
+
+Going live: set `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`) and point a
+Stripe webhook at `POST /api/v1/billing/webhook` — `checkout.session.completed`
+grants credits (`billing.topUp`) or switches plan (`billing.changePlan`),
+idempotently. Signature is verified against the raw request body.
 
 ## Moving to Postgres
 

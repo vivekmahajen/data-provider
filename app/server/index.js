@@ -26,7 +26,8 @@ const PUBLIC_DIR = resolve(__dirname, '../public');
 const PORT = process.env.PORT || 3000;
 
 const app = express();
-app.use(express.json({ limit: '5mb' }));
+// Capture the raw body so the Stripe webhook can verify its signature.
+app.use(express.json({ limit: '5mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Tiny API-key auth for /api/v1/* (the public REST surface). The in-app routes

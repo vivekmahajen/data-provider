@@ -8,6 +8,11 @@
 // costs 1 Apollo credit on success, 0 if not found — so we cache per person to
 // avoid paying twice when verifying both a person's email and phone.
 //
+// NOTE: Apollo's people/match API requires a PAID Apollo plan; on a free plan it
+// returns API_INACCESSIBLE. This verifier handles any non-OK response by
+// returning { status: 'unverified', confidence: 40 } so the pipeline degrades
+// gracefully rather than failing the ingest.
+//
 // We use Apollo only to VERIFY: we read email_status / phone presence and map
 // them to our verdict. We deliberately do NOT import Apollo's email/phone as new
 // resellable values here (see base.js).

@@ -46,6 +46,19 @@ export function ensureBilling(defaultKey) {
       meta TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_usage_customer ON usage_events(customer_id, ts);
+    CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL REFERENCES customers(id),
+      kind TEXT NOT NULL,            -- credits | plan
+      target TEXT NOT NULL,          -- pack id or plan name
+      credits INTEGER NOT NULL DEFAULT 0,
+      amount_usd INTEGER NOT NULL,   -- in whole dollars for the demo
+      provider TEXT NOT NULL,        -- stripe | simulated
+      session_id TEXT,
+      status TEXT NOT NULL DEFAULT 'open', -- open | paid | failed
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
   `);
   // Seed the admin/demo customer using the app's existing API key so current
   // flows (and the app's "try people search") keep working out of the box.
@@ -101,6 +114,26 @@ export function createCustomer({ name, plan = 'free' }) {
     { id: cid, name: name || 'Customer', key, plan, credits: PLANS[plan].credits, ts: now() }
   );
   return get('SELECT * FROM customers WHERE id = :id', { id: cid });
+}
+
+// Grant purchased credits (called after a successful payment). Adds to the
+// included pool so the customer's remaining balance goes up immediately.
+export function topUp(customer, credits, meta = {}) {
+  if (credits > 0) {
+    run('UPDATE customers SET credits_included = credits_included + :c WHERE id = :id', { c: credits, id: customer.id });
+    run(`INSERT INTO usage_events (id, customer_id, endpoint, units, ts, meta) VALUES (:id, :cid, 'topup', :u, :ts, :meta)`,
+      { id: id(), cid: customer.id, u: -credits, ts: now(), meta: JSON.stringify(meta) });
+  }
+  return get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
+}
+
+// Move a customer to a new plan: set the included allotment and start a fresh
+// period. Called after a successful plan-upgrade payment.
+export function changePlan(customer, plan) {
+  if (!PLANS[plan]) throw new Error(`unknown plan: ${plan}`);
+  run('UPDATE customers SET plan = :p, credits_included = :c, credits_used = 0, period_start = :ts WHERE id = :id',
+    { p: plan, c: PLANS[plan].credits, ts: now(), id: customer.id });
+  return get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
 }
 
 export function usageSummary(customer) {
