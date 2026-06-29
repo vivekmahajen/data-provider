@@ -9,7 +9,7 @@
 // async so swapping to Postgres needs no caller changes — only DATABASE_URL.
 
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -28,6 +28,9 @@ let _backend = null;
 // ---- backends --------------------------------------------------------------
 
 function makeSqlite(path) {
+  // Create the parent directory on first run (git doesn't track empty dirs, so
+  // a fresh clone has no data/ folder → SQLite "unable to open database file").
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const d = new DatabaseSync(path);
   d.exec('PRAGMA journal_mode = WAL;');
   d.exec('PRAGMA foreign_keys = ON;');
