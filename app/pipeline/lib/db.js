@@ -57,12 +57,32 @@ export function toPg(sql, params = {}) {
   return { text, values };
 }
 
+// Resolve a Postgres connection string from the common env-var names. Vercel's
+// Supabase/Neon integrations inject POSTGRES_URL (pooled) etc. rather than
+// DATABASE_URL, so we accept any of them.
+export function connectionString() {
+  return (
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.POSTGRES_PRISMA_URL ||
+    null
+  );
+}
+
 async function makePg(url) {
   const pg = (await import('pg')).default;
   // Return BIGINT (oid 20) as a JS number — our values (ms timestamps) are well
   // within Number.MAX_SAFE_INTEGER, and this keeps arithmetic/comparisons sane.
   pg.types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
-  const pool = new pg.Pool({ connectionString: url });
+  // Managed Postgres (Supabase/Neon/RDS) needs SSL; local does not. We don't
+  // verify the cert chain to avoid pooler self-signed-cert hassles.
+  const local = /localhost|127\.0\.0\.1/.test(url);
+  const pool = new pg.Pool({
+    connectionString: url,
+    ssl: local ? false : { rejectUnauthorized: false },
+    max: 3, // gentle on serverless / pooled connections
+  });
   return {
     dialect: 'pg',
     pool,
@@ -90,13 +110,13 @@ const DEFAULT_SQLITE = process.env.VERCEL
 
 export async function open(sqlitePath = DEFAULT_SQLITE) {
   if (_backend) return _backend;
-  const url = process.env.DATABASE_URL;
+  const url = connectionString();
   _backend = url ? await makePg(url) : makeSqlite(sqlitePath);
   await applySchema(_backend);
   return _backend;
 }
 
-export function dialect() { return _backend?.dialect || (process.env.DATABASE_URL ? 'pg' : 'sqlite'); }
+export function dialect() { return _backend?.dialect || (connectionString() ? 'pg' : 'sqlite'); }
 
 export async function close() { if (_backend) { await _backend.close(); _backend = null; } }
 
