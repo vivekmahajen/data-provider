@@ -29,6 +29,23 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 // Capture the raw body so the Stripe webhook can verify its signature.
 app.use(express.json({ limit: '5mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
+
+// One-time initialization (apply schema, seed admin). Runs lazily on the first
+// request so it works both as a long-running server and as a serverless
+// function (Vercel), where there is no single startup. Memoized; retried if it
+// fails so a transient DB hiccup doesn't wedge the process.
+let _bootPromise = null;
+function ensureBoot() {
+  if (!_bootPromise) {
+    _bootPromise = bootstrapProviderDB()
+      .then(() => ensureBilling(getDB().account.apiKey))
+      .catch((e) => { _bootPromise = null; throw e; });
+  }
+  return _bootPromise;
+}
+app.use((req, res, next) => {
+  ensureBoot().then(() => next()).catch((e) => res.status(500).json({ error: 'init_failed: ' + e.message }));
+});
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Tiny API-key auth for /api/v1/* (the public REST surface). The in-app routes
@@ -289,14 +306,17 @@ app.get('/universities', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'univers
 app.get('/privacy', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'privacy.html')));
 app.get('/admin', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'admin.html')));
 
-bootstrapProviderDB()
-  .then(() => ensureBilling(getDB().account.apiKey))
-  .catch((e) => console.error('provider DB bootstrap failed:', e.message))
-  .finally(() => {
-    app.listen(PORT, () => {
-      // eslint-disable-next-line no-console
-      console.log(`FullEnrich rebuild running → http://localhost:${PORT}  (marketing: /, app: /app)`);
+// Listen only when running as a normal server (local, Render, Fly, Docker).
+// On Vercel the app is imported as a serverless handler and must NOT listen.
+if (!process.env.VERCEL) {
+  ensureBoot()
+    .catch((e) => console.error('provider DB bootstrap failed:', e.message))
+    .finally(() => {
+      app.listen(PORT, () => {
+        // eslint-disable-next-line no-console
+        console.log(`FullEnrich rebuild running → http://localhost:${PORT}  (marketing: /, app: /app)`);
+      });
     });
-  });
+}
 
 export default app;

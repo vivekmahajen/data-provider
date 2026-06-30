@@ -11,6 +11,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
@@ -80,7 +81,14 @@ async function applySchema(backend) {
 
 // ---- lifecycle -------------------------------------------------------------
 
-export async function open(sqlitePath = resolve(__dirname, '../../data/provider.db')) {
+// On serverless (Vercel) the project FS is read-only — fall back to /tmp so
+// SQLite at least doesn't crash. NOTE: /tmp is ephemeral and per-instance, so
+// production on Vercel must set DATABASE_URL (Postgres) for real persistence.
+const DEFAULT_SQLITE = process.env.VERCEL
+  ? resolve(tmpdir(), 'provider.db')
+  : resolve(__dirname, '../../data/provider.db');
+
+export async function open(sqlitePath = DEFAULT_SQLITE) {
   if (_backend) return _backend;
   const url = process.env.DATABASE_URL;
   _backend = url ? await makePg(url) : makeSqlite(sqlitePath);
