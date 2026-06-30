@@ -287,6 +287,7 @@ app.get('/app', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'app.html')));
 app.get('/registry', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'registry.html')));
 app.get('/universities', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'universities.html')));
 app.get('/privacy', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'privacy.html')));
+app.get('/admin', (req, res) => res.sendFile(resolve(PUBLIC_DIR, 'admin.html')));
 
 bootstrapProviderDB()
   .then(() => ensureBilling(getDB().account.apiKey))

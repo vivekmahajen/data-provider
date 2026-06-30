@@ -101,6 +101,15 @@ export async function changePlan(customer, plan) {
   return get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
 }
 
+// Admin: list all customers with balances (for the operator's admin panel).
+export async function listCustomers() {
+  const rows = await all('SELECT * FROM customers ORDER BY is_admin DESC, created_at ASC');
+  return rows.map((c) => ({
+    id: c.id, name: c.name, apiKey: c.api_key, plan: c.plan, isAdmin: !!c.is_admin,
+    creditsIncluded: c.credits_included, creditsUsed: c.credits_used, creditsRemaining: remaining(c),
+  }));
+}
+
 export async function usageSummary(customer) {
   const c = await get('SELECT * FROM customers WHERE id = :id', { id: customer.id });
   const events = await all('SELECT endpoint, units, ts, meta FROM usage_events WHERE customer_id = :id ORDER BY ts DESC LIMIT 25', { id: c.id });
