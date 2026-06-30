@@ -4,13 +4,15 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { hashString, id, pick, slug, domainFromCompany, nextTs } from './util.js';
 
 export { nextTs };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = resolve(__dirname, '../../data');
+// Writable location: serverless platforms (Vercel) only allow writes to /tmp.
+const DATA_DIR = process.env.DATA_DIR || (process.env.VERCEL ? resolve(tmpdir(), 'fe-data') : resolve(__dirname, '../../data'));
 const DB_PATH = resolve(DATA_DIR, 'db.json');
 
 const DEFAULT_DB = {
@@ -51,8 +53,13 @@ function load() {
 }
 
 export function save() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+  // Best-effort: on a read-only serverless FS this may fail; the JSON store is
+  // demo state (the real product data lives in the pipeline DB / Postgres), so
+  // we don't crash the request if persistence isn't available.
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+  } catch { /* ignore on read-only / ephemeral FS */ }
 }
 
 export function getDB() {

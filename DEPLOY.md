@@ -26,6 +26,33 @@ hosts Node or Docker. The one thing that matters for a real registry:
 Note: Render's free Postgres expires after ~90 days and the free web service
 sleeps when idle — fine for testing; upgrade to paid plans for production.
 
+## Vercel (serverless)
+
+Vercel runs the app as a serverless function (config: `app/vercel.json`,
+entry `app/api/index.js`). Because Vercel's filesystem is read-only/ephemeral,
+**you must use a managed Postgres** — SQLite/file storage will not persist.
+
+1. Create a Postgres database: **Vercel → Storage → Postgres** (or Neon /
+   Supabase). Copy its connection string.
+2. **Vercel → Add New → Project**, import `vivekmahajen/data-provider`.
+3. Set **Root Directory = `app`** (the app lives there).
+4. Add Environment Variables:
+   - `DATABASE_URL` = your Postgres connection string  ← **required**
+   - `ADMIN_API_KEY` = a long random secret
+   - (optional) `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+5. Deploy. Then visit `/registry`, `/universities`, `/admin`.
+
+Notes & caveats:
+- `app/vercel.json` rewrites all routes to the single function, which serves both
+  the API and the static pages, and bundles the schema + `public/` via
+  `includeFiles`.
+- Initialization (schema + admin seed) runs lazily on the first request.
+- The marketing/enrichment demo state (`store.js`) is best-effort on Vercel and
+  may reset between invocations — the real product data (candidates, customers,
+  payments) lives in Postgres and persists.
+- If Vercel's file-bundling or cold starts give you trouble, **Render is a more
+  natural fit** for this stateful app (see above) — same `DATABASE_URL`.
+
 ## Alternative: Fly.io or Railway (Docker)
 
 The repo ships a `app/Dockerfile`, so any container host works.
