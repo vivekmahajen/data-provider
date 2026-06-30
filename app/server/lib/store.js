@@ -19,7 +19,9 @@ const DEFAULT_DB = {
     creditsTotal: 1000,
     creditsUsed: 0,
     creditsRolloverFrom: 0,
-    apiKey: 'fe_live_demo_0000000000',
+    // Admin/Data-API key. Override in production with ADMIN_API_KEY so it isn't
+    // the public demo value.
+    apiKey: process.env.ADMIN_API_KEY || 'fe_live_demo_0000000000',
   },
   contacts: [], // searchable B2B database
   jobs: [], // enrichment jobs (single + bulk)
