@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin — Manage University Accounts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="container">
+      <a class="brand" href="/"><span class="logo">F</span> Admin</a>
+      <nav class="nav-links"><a href="/universities">Buyer view</a><a href="/registry">Registry</a></nav>
+    </div>
+  </header>
+
+  <main class="container" style="max-width: 1000px; padding: 2rem 0;">
+    <h1 style="font-size: 2rem;">University accounts</h1>
+    <p class="muted">Issue API keys to universities, top up credits, and change plans. Requires your admin key (<code>ADMIN_API_KEY</code>).</p>
+
+    <div class="card" style="margin: 1rem 0;">
+      <div class="row">
+        <div class="field"><label>Admin API key</label><input id="key" type="password" placeholder="your ADMIN_API_KEY" /></div>
+        <div class="field"><label>&nbsp;</label><button class="btn btn-primary" id="load">Load accounts</button></div>
+      </div>
+      <p class="hint" id="status"></p>
+    </div>
+
+    <div class="card">
+      <h3>Create a university account</h3>
+      <div class="row">
+        <div class="field"><label>Name</label><input id="newName" placeholder="Pune University" /></div>
+        <div class="field"><label>Plan</label><select id="newPlan"></select></div>
+        <div class="field"><label>&nbsp;</label><button class="btn btn-primary" id="create">Issue key</button></div>
+      </div>
+      <div id="created"></div>
+    </div>
+
+    <div class="card" style="margin-top:1rem; overflow:auto;">
+      <table id="table">
+        <thead><tr><th>Name</th><th>Plan</th><th>API key</th><th>Used / Included</th><th>Remaining</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="hint" id="empty">Enter your admin key and click Load accounts.</p>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2800); };
+    const key = () => $('#key').value.trim();
+    const headers = () => ({ 'x-api-key': key(), 'content-type': 'application/json' });
+
+    $('#key').value = sessionStorage.getItem('admin_key') || '';
+
+    async function load() {
+      if (!key()) return toast('Enter your admin key');
+      sessionStorage.setItem('admin_key', key());
+      $('#status').textContent = 'Loading…';
+      try {
+        const res = await fetch('/api/v1/billing/customers', { headers: headers() });
+        const data = await res.json();
+        if (!res.ok) { $('#status').textContent = data.error === 'admin_key_required' ? 'That key is not an admin key.' : (data.error || 'Error'); return; }
+        $('#status').textContent = '';
+        $('#newPlan').innerHTML = data.plans.map((p) => `<option ${p==='starter'?'selected':''}>${p}</option>`).join('');
+        render(data.customers);
+      } catch (e) { $('#status').textContent = e.message; }
+    }
+
+    function render(customers) {
+      $('#empty').style.display = customers.length ? 'none' : 'block';
+      $('#table tbody').innerHTML = customers.map((c) => `<tr>
+        <td><strong>${esc(c.name)}</strong>${c.isAdmin ? ' <span class="pill">admin</span>' : ''}</td>
+        <td>${esc(c.plan)}</td>
+        <td><span class="mono">${esc(c.apiKey)}</span> <button class="btn btn-ghost btn-sm" data-copy="${esc(c.apiKey)}">copy</button></td>
+        <td>${c.creditsUsed} / ${c.creditsIncluded}</td>
+        <td><strong>${c.creditsRemaining}</strong></td>
+        <td>
+          <button class="btn btn-ghost btn-sm" data-grant="${c.id}">+1000 credits</button>
+          <button class="btn btn-ghost btn-sm" data-plan="${c.id}">change plan</button>
+        </td>
+      </tr>`).join('');
+      document.querySelectorAll('[data-copy]').forEach((b) => b.onclick = () => { navigator.clipboard?.writeText(b.dataset.copy); toast('Key copied'); });
+      document.querySelectorAll('[data-grant]').forEach((b) => b.onclick = () => grant(b.dataset.grant, { credits: 1000 }));
+      document.querySelectorAll('[data-plan]').forEach((b) => b.onclick = () => {
+        const plan = prompt('New plan (free / starter / pro / scale):');
+        if (plan) grant(b.dataset.plan, { plan });
+      });
+    }
+
+    async function grant(id, body) {
+      const res = await fetch(`/api/v1/billing/customers/${id}/grant`, { method: 'POST', headers: headers(), body: JSON.stringify(body) });
+      const data = await res.json();
+      toast(res.ok ? 'Updated' : (data.error || 'Error'));
+      if (res.ok) load();
+    }
+
+    $('#create').onclick = async () => {
+      if (!key()) return toast('Enter your admin key');
+      const res = await fetch('/api/v1/billing/customers', { method: 'POST', headers: headers(), body: JSON.stringify({ name: $('#newName').value || 'University', plan: $('#newPlan').value }) });
+      const data = await res.json();
+      if (!res.ok) return toast(data.error || 'Error');
+      $('#created').innerHTML = `<div class="card" style="margin-top:.8rem; background: var(--surface-2);">
+        Issued key for <strong>${esc(data.name)}</strong>:<br>
+        <span class="mono">${esc(data.apiKey)}</span> <button class="btn btn-ghost btn-sm" id="copyNew">copy</button>
+        <p class="hint">Give this key to the university — they use it at <a href="/universities">/universities</a>.</p></div>`;
+      $('#copyNew').onclick = () => { navigator.clipboard?.writeText(data.apiKey); toast('Key copied'); };
+      $('#newName').value = '';
+      load();
+    };
+
+    $('#load').onclick = load;
+    if (key()) load();
+  </script>
+</body>
+</html>

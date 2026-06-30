@@ -14,7 +14,8 @@ import { open, all, get } from '../pipeline/lib/db.js';
 import { suppress } from '../pipeline/lib/compliance.js';
 import { ingest } from '../pipeline/lib/pipeline.js';
 import { CSVConnector } from '../pipeline/connectors/csv.js';
-import { getCustomerByKey, charge, usageSummary, createCustomer, PRICES } from './billing.js';
+import { getCustomerByKey, charge, usageSummary, createCustomer, listCustomers, topUp, changePlan, PRICES, PLANS } from './billing.js';
+import { get as dbGet } from '../pipeline/lib/db.js';
 import { createCheckout, completeCheckout, handleStripeWebhook, provider, CREDIT_PACKS, PLAN_PRICES } from './payments.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -219,6 +220,26 @@ export function providerRouter() {
     } catch (e) {
       res.status(400).json({ error: e.message });
     }
+  }));
+
+  // GET /api/v1/billing/customers — list all customers (admin only).
+  r.get('/billing/customers', h(async (req, res) => {
+    if (!req.customer.is_admin) return res.status(403).json({ error: 'admin_key_required' });
+    res.json({ customers: await listCustomers(), plans: Object.keys(PLANS) });
+  }));
+
+  // POST /api/v1/billing/customers/:id/grant — admin grants credits or sets plan
+  // (operator override, no payment). Body: { credits } and/or { plan }.
+  r.post('/billing/customers/:id/grant', h(async (req, res) => {
+    if (!req.customer.is_admin) return res.status(403).json({ error: 'admin_key_required' });
+    const cust = await dbGet('SELECT * FROM customers WHERE id = :id', { id: req.params.id });
+    if (!cust) return res.status(404).json({ error: 'customer_not_found' });
+    try {
+      if (req.body?.plan) await changePlan(cust, req.body.plan);
+      if (Number(req.body?.credits) > 0) await topUp(cust, Number(req.body.credits), { admin: true });
+      const updated = await dbGet('SELECT * FROM customers WHERE id = :id', { id: cust.id });
+      res.json({ ok: true, plan: updated.plan, creditsIncluded: updated.credits_included, creditsUsed: updated.credits_used });
+    } catch (e) { res.status(400).json({ error: e.message }); }
   }));
 
   // GET /api/v1/billing/catalog — buyable credit packs & plan prices.
